@@ -1,37 +1,54 @@
 // Vercel Serverless Function — proxies HubSpot API calls
-// Your private app token is stored as a Vercel environment variable (HUBSPOT_TOKEN)
-// The client never sees it
+// Token stored as Vercel env var (HUBSPOT_TOKEN) — never exposed to client
 
-export default async function handler(req, res) {
-  // CORS headers
+module.exports = async function handler(req, res) {
+  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
   if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
   const token = process.env.HUBSPOT_TOKEN;
-  if (!token) return res.status(500).json({ error: 'HUBSPOT_TOKEN not configured' });
+  if (!token) return res.status(500).json({ error: 'HUBSPOT_TOKEN not configured. Add it in Vercel Settings > Environment Variables.' });
 
-  const { action, companyId, companyName, placementOrderId, noteBody } = req.body || {};
+  // Parse body
+  let body = req.body;
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body); } catch (e) { return res.status(400).json({ error: 'Invalid JSON body' }); }
+  }
+
+  const { action, companyId, companyName, placementOrderId, noteBody } = body || {};
+
+  const hubspotFetch = async (url, options = {}) => {
+    const resp = await fetch(url, {
+      ...options,
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json',
+        ...(options.headers || {})
+      }
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      console.error('HubSpot API error:', url, resp.status, JSON.stringify(data));
+      throw new Error(data.message || 'HubSpot API error: ' + resp.status);
+    }
+    return data;
+  };
 
   try {
-    // ACTION: Search companies by name
+    // Search companies
     if (action === 'search_companies') {
-      const resp = await fetch('https://api.hubapi.com/crm/v3/objects/companies/search', {
+      if (!companyName) return res.status(400).json({ error: 'companyName required' });
+      const data = await hubspotFetch('https://api.hubapi.com/crm/v3/objects/companies/search', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify({
-          filterGroups: [],
           query: companyName,
           limit: 10,
           properties: ['name', 'domain']
         })
       });
-      const data = await resp.json();
       return res.status(200).json({
         companies: (data.results || []).map(r => ({
           id: r.id,
@@ -41,43 +58,39 @@ export default async function handler(req, res) {
       });
     }
 
-    // ACTION: Get placement orders for a company
+    // Get placement orders for a company
     if (action === 'get_placements') {
-      // First get deals associated with company
-      const dealsResp = await fetch('https://api.hubapi.com/crm/v3/objects/companies/' + companyId + '/associations/deals', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const dealsData = await dealsResp.json();
-      const dealIds = (dealsData.results || []).map(r => r.id || r.toObjectId);
+      if (!companyId) return res.status(400).json({ error: 'companyId required' });
 
-      if (dealIds.length === 0) {
-        return res.status(200).json({ placements: [] });
+      // Get deals associated with company
+      let dealIds = [];
+      try {
+        const dealsData = await hubspotFetch(
+          'https://api.hubapi.com/crm/v3/objects/companies/' + companyId + '/associations/deals'
+        );
+        dealIds = (dealsData.results || []).map(r => r.toObjectId || r.id);
+      } catch (e) {
+        // No deals, continue to try direct association
       }
 
-      // For each deal, get associated placement orders (custom object 0-970)
       let allPlacements = [];
+
+      // Via deals -> placement orders
       for (const dealId of dealIds) {
         try {
-          const poResp = await fetch(`https://api.hubapi.com/crm/v3/objects/deals/${dealId}/associations/0-970`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          const poData = await poResp.json();
-          const poIds = (poData.results || []).map(r => r.id || r.toObjectId);
+          const poData = await hubspotFetch(
+            'https://api.hubapi.com/crm/v3/objects/deals/' + dealId + '/associations/0-970'
+          );
+          const poIds = (poData.results || []).map(r => r.toObjectId || r.id);
 
           if (poIds.length > 0) {
-            // Fetch each placement order's properties
-            const batchResp = await fetch('https://api.hubapi.com/crm/v3/objects/0-970/batch/read', {
+            const batchData = await hubspotFetch('https://api.hubapi.com/crm/v3/objects/0-970/batch/read', {
               method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-              },
               body: JSON.stringify({
-                inputs: poIds.map(id => ({ id })),
+                inputs: poIds.map(id => ({ id: String(id) })),
                 properties: ['candidate_name', 'hs_object_id']
               })
             });
-            const batchData = await batchResp.json();
             const placements = (batchData.results || []).map(r => ({
               id: r.id,
               candidate_name: r.properties?.candidate_name || null
@@ -85,32 +98,26 @@ export default async function handler(req, res) {
             allPlacements = allPlacements.concat(placements);
           }
         } catch (e) {
-          // Skip if association type doesn't exist for this deal
+          // Association type may not exist
         }
       }
 
-      // Also try direct company → placement order association
+      // Direct company -> placement orders
       try {
-        const directResp = await fetch(`https://api.hubapi.com/crm/v3/objects/companies/${companyId}/associations/0-970`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const directData = await directResp.json();
-        const directIds = (directData.results || []).map(r => r.id || r.toObjectId)
-          .filter(id => !allPlacements.some(p => p.id === id));
+        const directData = await hubspotFetch(
+          'https://api.hubapi.com/crm/v3/objects/companies/' + companyId + '/associations/0-970'
+        );
+        const directIds = (directData.results || []).map(r => r.toObjectId || r.id)
+          .filter(id => !allPlacements.some(p => String(p.id) === String(id)));
 
         if (directIds.length > 0) {
-          const batchResp = await fetch('https://api.hubapi.com/crm/v3/objects/0-970/batch/read', {
+          const batchData = await hubspotFetch('https://api.hubapi.com/crm/v3/objects/0-970/batch/read', {
             method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            },
             body: JSON.stringify({
-              inputs: directIds.map(id => ({ id })),
+              inputs: directIds.map(id => ({ id: String(id) })),
               properties: ['candidate_name', 'hs_object_id']
             })
           });
-          const batchData = await batchResp.json();
           const placements = (batchData.results || []).map(r => ({
             id: r.id,
             candidate_name: r.properties?.candidate_name || null
@@ -124,52 +131,54 @@ export default async function handler(req, res) {
       return res.status(200).json({ placements: allPlacements });
     }
 
-    // ACTION: Submit feedback (create note on placement order)
+    // Submit feedback
     if (action === 'submit_feedback') {
-      const noteResp = await fetch('https://api.hubapi.com/crm/v3/objects/notes', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          properties: {
-            hs_note_body: noteBody,
-            hs_timestamp: new Date().toISOString()
-          },
-          associations: [{
-            to: { id: placementOrderId },
-            types: [{ associationCategory: 'USER_DEFINED', associationTypeId: 1 }]
-          }]
-        })
-      });
+      if (!placementOrderId || !noteBody) return res.status(400).json({ error: 'placementOrderId and noteBody required' });
 
-      // Also try associating with the default note association
-      if (!noteResp.ok) {
-        // Fallback: create note without association, just record it
-        const fallbackResp = await fetch('https://api.hubapi.com/crm/v3/objects/notes', {
+      let noteId = null;
+      let method = 'associated';
+
+      try {
+        const noteData = await hubspotFetch('https://api.hubapi.com/crm/v3/objects/notes', {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             properties: {
-              hs_note_body: noteBody + `\n[Placement Order ID: ${placementOrderId}]`,
+              hs_note_body: noteBody,
               hs_timestamp: new Date().toISOString()
-            }
+            },
+            associations: [{
+              to: { id: Number(placementOrderId) },
+              types: [{ associationCategory: 'USER_DEFINED', associationTypeId: 1 }]
+            }]
           })
         });
-        const fallbackData = await fallbackResp.json();
-        return res.status(200).json({ success: true, noteId: fallbackData.id, method: 'fallback' });
+        noteId = noteData.id;
+      } catch (e) {
+        // Fallback: note without association
+        try {
+          const fallbackData = await hubspotFetch('https://api.hubapi.com/crm/v3/objects/notes', {
+            method: 'POST',
+            body: JSON.stringify({
+              properties: {
+                hs_note_body: noteBody + '\n[Placement Order ID: ' + placementOrderId + ']',
+                hs_timestamp: new Date().toISOString()
+              }
+            })
+          });
+          noteId = fallbackData.id;
+          method = 'fallback';
+        } catch (e2) {
+          return res.status(500).json({ error: 'Failed to create note: ' + e2.message });
+        }
       }
 
-      const noteData = await noteResp.json();
-      return res.status(200).json({ success: true, noteId: noteData.id });
+      return res.status(200).json({ success: true, noteId, method });
     }
 
-    return res.status(400).json({ error: 'Unknown action' });
+    return res.status(400).json({ error: 'Unknown action. Use: search_companies, get_placements, submit_feedback' });
   } catch (err) {
+    console.error('Server error:', err);
     return res.status(500).json({ error: err.message });
   }
-}
+};
+           
