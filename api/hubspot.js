@@ -42,9 +42,10 @@ module.exports = async function handler(req, res) {
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { return res.status(400).json({ error: 'Invalid JSON' }); } }
 
-  const { action, companyId, companyName, placementOrderId, noteBody, csatScore } = body || {};
+  const { action, companyId, companyName, contactId, noteBody, csatScore } = body || {};
 
   try {
+    // SEARCH COMPANIES
     if (action === 'search_companies') {
       const data = await hubspotRequest('POST', '/crm/v3/objects/companies/search', {
         query: companyName || '', limit: 10, properties: ['name', 'domain']
@@ -54,120 +55,125 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    // GET SMART WORKERS FOR A COMPANY
     if (action === 'get_placements') {
-      const debug = { steps: [], errors: [], schema: null };
+      const debug = { steps: [], errors: [] };
 
-      // Step 0: Try to get the schema for 0-970 to find the real name
-      let objectName = '0-970';
-      const namesToTry = ['0-970'];
+      // Search contacts with contact_type = "Smart Worker" associated with this company
+      let smartWorkers = [];
+      let after = undefined;
+      let page = 0;
 
-      try {
-        const schema = await hubspotRequest('GET', '/crm/v3/schemas/0-970');
-        debug.schema = { name: schema.name, fullyQualifiedName: schema.fullyQualifiedName, objectTypeId: schema.objectTypeId };
-        if (schema.fullyQualifiedName) namesToTry.push(schema.fullyQualifiedName);
-        if (schema.name) namesToTry.push(schema.name);
-        debug.steps.push('schema found: ' + schema.name + ' / ' + schema.fullyQualifiedName);
-      } catch (e) {
-        debug.errors.push('schema 0-970: ' + e.message);
-      }
-
-      // Also try fetching all schemas to find it
-      try {
-        const allSchemas = await hubspotRequest('GET', '/crm/v3/schemas');
-        const names = (allSchemas.results || []).map(s => s.name + ' (' + s.objectTypeId + ')');
-        debug.steps.push('all schemas: ' + names.join(', '));
-        const match = (allSchemas.results || []).find(s => s.objectTypeId === '0-970');
-        if (match) {
-          if (match.fullyQualifiedName) namesToTry.push(match.fullyQualifiedName);
-          if (match.name) namesToTry.push(match.name);
-          debug.steps.push('matched schema: ' + match.name);
-        }
-      } catch (e) {
-        debug.errors.push('all schemas: ' + e.message);
-      }
-
-      // Step 1: Get deals
-      let dealIds = [];
-      try {
-        const d = await hubspotRequest('GET', '/crm/v3/objects/companies/' + companyId + '/associations/deals');
-        dealIds = (d.results || []).map(r => r.toObjectId || r.id);
-        debug.steps.push('deals: ' + dealIds.length);
-      } catch (e) { debug.errors.push('deals: ' + e.message); }
-
-      // Step 2: Get placement IDs via associations
-      let allPlacementIds = [];
-      for (const dealId of dealIds) {
+      do {
         try {
-          const poData = await hubspotRequest('GET', '/crm/v3/objects/deals/' + dealId + '/associations/0-970');
-          const ids = (poData.results || []).map(r => r.toObjectId || r.id);
-          allPlacementIds = allPlacementIds.concat(ids);
-        } catch (e) { debug.errors.push('deal assoc: ' + e.message); }
-      }
-      allPlacementIds = [...new Set(allPlacementIds.map(String))];
-      debug.steps.push('IDs found: ' + allPlacementIds.length);
-
-      // Step 3: Try reading with each name variant
-      let allPlacements = [];
-      for (const name of [...new Set(namesToTry)]) {
-        if (allPlacements.length > 0) break;
-        // Try search
-        try {
-          const searchData = await hubspotRequest('POST', '/crm/v3/objects/' + name + '/search', {
-            filterGroups: [{ filters: [{ propertyName: 'hs_object_id', operator: 'IN', values: allPlacementIds }] }],
-            properties: ['candidate_name', 'csat', 'hs_object_id'],
+          const searchBody = {
+            filterGroups: [{
+              filters: [
+                {
+                  propertyName: 'contact_type',
+                  operator: 'EQ',
+                  value: 'Smart Worker'
+                },
+                {
+                  propertyName: 'associations.company',
+                  operator: 'EQ',
+                  value: companyId
+                }
+              ]
+            }],
+            properties: ['firstname', 'lastname', 'email', 'contact_type', 'csat', 'jobtitle'],
             limit: 100
-          });
-          allPlacements = (searchData.results || []).map(r => ({
-            id: r.id, candidate_name: r.properties?.candidate_name || null, csat: r.properties?.csat || null
-          }));
-          debug.steps.push('search "' + name + '": ' + allPlacements.length);
-        } catch (e) {
-          debug.errors.push('search "' + name + '": ' + e.message);
-        }
-        // Try individual read
-        if (allPlacements.length === 0) {
-          try {
-            const po = await hubspotRequest('GET', '/crm/v3/objects/' + name + '/' + allPlacementIds[0] + '?properties=candidate_name,csat');
-            allPlacements.push({ id: po.id, candidate_name: po.properties?.candidate_name || null, csat: po.properties?.csat || null });
-            debug.steps.push('read "' + name + '": worked');
-            // Fetch rest
-            for (const poId of allPlacementIds.slice(1)) {
-              try {
-                const p2 = await hubspotRequest('GET', '/crm/v3/objects/' + name + '/' + poId + '?properties=candidate_name,csat');
-                allPlacements.push({ id: p2.id, candidate_name: p2.properties?.candidate_name || null, csat: p2.properties?.csat || null });
-              } catch (e2) {}
-            }
-          } catch (e) {
-            debug.errors.push('read "' + name + '": ' + e.message);
-          }
-        }
-      }
+          };
+          if (after) searchBody.after = after;
 
-      return res.status(200).json({ placements: allPlacements, debug });
+          const searchData = await hubspotRequest('POST', '/crm/v3/objects/contacts/search', searchBody);
+          const contacts = (searchData.results || []).map(r => ({
+            id: r.id,
+            candidate_name: [r.properties?.firstname, r.properties?.lastname].filter(Boolean).join(' ') || null,
+            email: r.properties?.email || null,
+            jobtitle: r.properties?.jobtitle || null,
+            csat: r.properties?.csat || null
+          }));
+          smartWorkers = smartWorkers.concat(contacts);
+          after = searchData.paging?.next?.after || null;
+          page++;
+          debug.steps.push('page ' + page + ': ' + contacts.length + ' contacts');
+        } catch (e) {
+          debug.errors.push('search page ' + page + ': ' + e.message);
+
+          // Fallback: get all contacts for the company, then filter
+          if (page === 0) {
+            debug.steps.push('trying fallback: all contacts for company');
+            try {
+              // Get contact IDs associated with company
+              const assocData = await hubspotRequest('GET', '/crm/v3/objects/companies/' + companyId + '/associations/contacts');
+              const contactIds = (assocData.results || []).map(r => String(r.toObjectId || r.id));
+              debug.steps.push('company contacts: ' + contactIds.length);
+
+              if (contactIds.length > 0) {
+                // Fetch each contact and filter by type
+                for (const cid of contactIds) {
+                  try {
+                    const c = await hubspotRequest('GET', '/crm/v3/objects/contacts/' + cid + '?properties=firstname,lastname,email,contact_type,csat,jobtitle');
+                    if (c.properties?.contact_type === 'Smart Worker') {
+                      smartWorkers.push({
+                        id: c.id,
+                        candidate_name: [c.properties?.firstname, c.properties?.lastname].filter(Boolean).join(' ') || null,
+                        email: c.properties?.email || null,
+                        jobtitle: c.properties?.jobtitle || null,
+                        csat: c.properties?.csat || null
+                      });
+                    }
+                  } catch (e2) {
+                    debug.errors.push('contact ' + cid + ': ' + e2.message);
+                  }
+                }
+                debug.steps.push('smart workers found: ' + smartWorkers.length);
+              }
+            } catch (e2) {
+              debug.errors.push('fallback: ' + e2.message);
+            }
+          }
+          after = null;
+        }
+      } while (after && page < 5);
+
+      debug.steps.push('total smart workers: ' + smartWorkers.length);
+      return res.status(200).json({ placements: smartWorkers, debug });
     }
 
+    // SUBMIT FEEDBACK — writes CSAT to contact + creates note
     if (action === 'submit_feedback') {
       const results = { scoreUpdated: false, noteCreated: false, errors: [] };
+
+      // Step 1: Update csat on the contact
       try {
-        await hubspotRequest('PATCH', '/crm/v3/objects/0-970/' + placementOrderId, {
+        await hubspotRequest('PATCH', '/crm/v3/objects/contacts/' + contactId, {
           properties: { csat: String(csatScore) }
         });
         results.scoreUpdated = true;
       } catch (e) { results.errors.push('Score: ' + e.message); }
+
+      // Step 2: Create note associated with contact
       try {
         await hubspotRequest('POST', '/crm/v3/objects/notes', {
           properties: { hs_note_body: noteBody, hs_timestamp: new Date().toISOString() },
-          associations: [{ to: { id: Number(placementOrderId) }, types: [{ associationCategory: 'USER_DEFINED', associationTypeId: 1 }] }]
+          associations: [{
+            to: { id: Number(contactId) },
+            types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 202 }]
+          }]
         });
         results.noteCreated = true;
       } catch (e) {
+        // Fallback without association
         try {
           await hubspotRequest('POST', '/crm/v3/objects/notes', {
-            properties: { hs_note_body: noteBody + '\n[Placement Order ID: ' + placementOrderId + ']', hs_timestamp: new Date().toISOString() }
+            properties: { hs_note_body: noteBody + '\n[Contact ID: ' + contactId + ']', hs_timestamp: new Date().toISOString() }
           });
           results.noteCreated = true;
         } catch (e2) { results.errors.push('Note: ' + e2.message); }
       }
+
       return res.status(200).json({ success: results.scoreUpdated, ...results });
     }
 
