@@ -19,9 +19,9 @@ function hubspotRequest(method, path, body) {
         try {
           const parsed = JSON.parse(data);
           if (res.statusCode >= 400) {
-            reject(new Error('HubSpot ' + res.statusCode + ': ' + (parsed.message || data)));
+            reject(new Error('HubSpot ' + res.statusCode + ': ' + (parsed.message || JSON.stringify(parsed))));
           } else { resolve(parsed); }
-        } catch (e) { reject(new Error('Parse error: ' + data.substring(0, 200))); }
+        } catch (e) { reject(new Error('Parse error: ' + data.substring(0, 300))); }
       });
     });
     req.on('error', (e) => reject(e));
@@ -45,6 +45,7 @@ module.exports = async function handler(req, res) {
   const { action, companyId, companyName, placementOrderId, noteBody, csatScore } = body || {};
 
   try {
+    // SEARCH COMPANIES
     if (action === 'search_companies') {
       const data = await hubspotRequest('POST', '/crm/v3/objects/companies/search', {
         query: companyName || '', limit: 10, properties: ['name', 'domain']
@@ -54,44 +55,120 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    // GET PLACEMENT ORDERS
     if (action === 'get_placements') {
-      let dealIds = [];
-      try { const d = await hubspotRequest('GET', '/crm/v3/objects/companies/' + companyId + '/associations/deals'); dealIds = (d.results || []).map(r => r.toObjectId || r.id); } catch (e) {}
+      let allPlacementIds = [];
+      const debug = { paths_tried: [], errors: [] };
 
-      let allPlacements = [];
-      for (const dealId of dealIds) {
-        try {
-          const poData = await hubspotRequest('GET', '/crm/v3/objects/deals/' + dealId + '/associations/0-970');
-          const poIds = (poData.results || []).map(r => r.toObjectId || r.id);
-          if (poIds.length > 0) {
-            const bd = await hubspotRequest('POST', '/crm/v3/objects/0-970/batch/read', {
-              inputs: poIds.map(id => ({ id: String(id) })),
-              properties: ['candidate_name', 'hs_object_id', 'csat']
-            });
-            allPlacements = allPlacements.concat((bd.results || []).map(r => ({
-              id: r.id, candidate_name: r.properties?.candidate_name || null, csat: r.properties?.csat || null
-            })));
+      // Method 1: company -> deals -> placement orders (v3 associations)
+      try {
+        const dealsData = await hubspotRequest('GET', '/crm/v3/objects/companies/' + companyId + '/associations/deals');
+        const dealIds = (dealsData.results || []).map(r => r.toObjectId || r.id);
+        debug.paths_tried.push('company->deals: found ' + dealIds.length + ' deals');
+
+        for (const dealId of dealIds) {
+          // Try v3 path
+          try {
+            const poData = await hubspotRequest('GET', '/crm/v3/objects/deals/' + dealId + '/associations/0-970');
+            const ids = (poData.results || []).map(r => r.toObjectId || r.id);
+            debug.paths_tried.push('deal ' + dealId + ' -> 0-970 v3: found ' + ids.length);
+            allPlacementIds = allPlacementIds.concat(ids);
+          } catch (e) {
+            debug.errors.push('deal->po v3: ' + e.message);
           }
-        } catch (e) {}
+
+          // Try v4 associations path
+          if (allPlacementIds.length === 0) {
+            try {
+              const v4Data = await hubspotRequest('POST', '/crm/v4/associations/deals/0-970/batch/read', {
+                inputs: [{ id: String(dealId) }]
+              });
+              const ids = (v4Data.results || []).flatMap(r => (r.to || []).map(t => t.toObjectId || t.id));
+              debug.paths_tried.push('deal ' + dealId + ' -> 0-970 v4: found ' + ids.length);
+              allPlacementIds = allPlacementIds.concat(ids);
+            } catch (e) {
+              debug.errors.push('deal->po v4: ' + e.message);
+            }
+          }
+        }
+      } catch (e) {
+        debug.errors.push('company->deals: ' + e.message);
       }
 
-      try {
-        const dd = await hubspotRequest('GET', '/crm/v3/objects/companies/' + companyId + '/associations/0-970');
-        const dIds = (dd.results || []).map(r => r.toObjectId || r.id).filter(id => !allPlacements.some(p => String(p.id) === String(id)));
-        if (dIds.length > 0) {
-          const bd = await hubspotRequest('POST', '/crm/v3/objects/0-970/batch/read', {
-            inputs: dIds.map(id => ({ id: String(id) })),
+      // Method 2: company -> placement orders directly (v3)
+      if (allPlacementIds.length === 0) {
+        try {
+          const directData = await hubspotRequest('GET', '/crm/v3/objects/companies/' + companyId + '/associations/0-970');
+          const ids = (directData.results || []).map(r => r.toObjectId || r.id);
+          debug.paths_tried.push('company->po v3 direct: found ' + ids.length);
+          allPlacementIds = allPlacementIds.concat(ids);
+        } catch (e) {
+          debug.errors.push('company->po v3: ' + e.message);
+        }
+      }
+
+      // Method 3: company -> placement orders directly (v4)
+      if (allPlacementIds.length === 0) {
+        try {
+          const v4Data = await hubspotRequest('POST', '/crm/v4/associations/companies/0-970/batch/read', {
+            inputs: [{ id: String(companyId) }]
+          });
+          const ids = (v4Data.results || []).flatMap(r => (r.to || []).map(t => t.toObjectId || t.id));
+          debug.paths_tried.push('company->po v4 direct: found ' + ids.length);
+          allPlacementIds = allPlacementIds.concat(ids);
+        } catch (e) {
+          debug.errors.push('company->po v4: ' + e.message);
+        }
+      }
+
+      // Method 4: Search all placement orders and filter (last resort)
+      if (allPlacementIds.length === 0) {
+        try {
+          const searchData = await hubspotRequest('POST', '/crm/v3/objects/0-970/search', {
+            filterGroups: [],
+            limit: 100,
             properties: ['candidate_name', 'hs_object_id', 'csat']
           });
-          allPlacements = allPlacements.concat((bd.results || []).map(r => ({
-            id: r.id, candidate_name: r.properties?.candidate_name || null, csat: r.properties?.csat || null
-          })));
+          debug.paths_tried.push('search all 0-970: found ' + (searchData.results || []).length);
+          
+          // Return all for now with debug info so we can see what exists
+          const allPlacements = (searchData.results || []).map(r => ({
+            id: r.id,
+            candidate_name: r.properties?.candidate_name || null,
+            csat: r.properties?.csat || null
+          }));
+          
+          return res.status(200).json({ placements: allPlacements, debug });
+        } catch (e) {
+          debug.errors.push('search all: ' + e.message);
         }
-      } catch (e) {}
+      }
 
-      return res.status(200).json({ placements: allPlacements });
+      // Deduplicate
+      allPlacementIds = [...new Set(allPlacementIds.map(String))];
+
+      // Fetch details for found IDs
+      if (allPlacementIds.length > 0) {
+        try {
+          const batchData = await hubspotRequest('POST', '/crm/v3/objects/0-970/batch/read', {
+            inputs: allPlacementIds.map(id => ({ id: String(id) })),
+            properties: ['candidate_name', 'hs_object_id', 'csat']
+          });
+          const allPlacements = (batchData.results || []).map(r => ({
+            id: r.id,
+            candidate_name: r.properties?.candidate_name || null,
+            csat: r.properties?.csat || null
+          }));
+          return res.status(200).json({ placements: allPlacements, debug });
+        } catch (e) {
+          debug.errors.push('batch read: ' + e.message);
+        }
+      }
+
+      return res.status(200).json({ placements: [], debug });
     }
 
+    // SUBMIT FEEDBACK
     if (action === 'submit_feedback') {
       const results = { scoreUpdated: false, noteCreated: false, errors: [] };
 
@@ -103,7 +180,7 @@ module.exports = async function handler(req, res) {
         results.scoreUpdated = true;
       } catch (e) { results.errors.push('Score update: ' + e.message); }
 
-      // Step 2: Create note on timeline
+      // Step 2: Create note
       try {
         await hubspotRequest('POST', '/crm/v3/objects/notes', {
           properties: { hs_note_body: noteBody, hs_timestamp: new Date().toISOString() },
