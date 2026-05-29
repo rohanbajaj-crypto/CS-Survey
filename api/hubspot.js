@@ -30,6 +30,23 @@ function hubspotRequest(method, path, body) {
   });
 }
 
+async function fetchPlacementDetails(poIds) {
+  const results = [];
+  for (const poId of poIds) {
+    try {
+      const po = await hubspotRequest('GET', '/crm/v3/objects/0-970/' + poId + '?properties=candidate_name,csat');
+      results.push({
+        id: po.id,
+        candidate_name: po.properties?.candidate_name || null,
+        csat: po.properties?.csat || null
+      });
+    } catch (e) {
+      // Skip individual failures
+    }
+  }
+  return results;
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -58,114 +75,39 @@ module.exports = async function handler(req, res) {
     // GET PLACEMENT ORDERS
     if (action === 'get_placements') {
       let allPlacementIds = [];
-      const debug = { paths_tried: [], errors: [] };
 
-      // Method 1: company -> deals -> placement orders (v3 associations)
+      // Step 1: Get deals for company
+      let dealIds = [];
       try {
-        const dealsData = await hubspotRequest('GET', '/crm/v3/objects/companies/' + companyId + '/associations/deals');
-        const dealIds = (dealsData.results || []).map(r => r.toObjectId || r.id);
-        debug.paths_tried.push('company->deals: found ' + dealIds.length + ' deals');
+        const d = await hubspotRequest('GET', '/crm/v3/objects/companies/' + companyId + '/associations/deals');
+        dealIds = (d.results || []).map(r => r.toObjectId || r.id);
+      } catch (e) {}
 
-        for (const dealId of dealIds) {
-          // Try v3 path
-          try {
-            const poData = await hubspotRequest('GET', '/crm/v3/objects/deals/' + dealId + '/associations/0-970');
-            const ids = (poData.results || []).map(r => r.toObjectId || r.id);
-            debug.paths_tried.push('deal ' + dealId + ' -> 0-970 v3: found ' + ids.length);
-            allPlacementIds = allPlacementIds.concat(ids);
-          } catch (e) {
-            debug.errors.push('deal->po v3: ' + e.message);
-          }
-
-          // Try v4 associations path
-          if (allPlacementIds.length === 0) {
-            try {
-              const v4Data = await hubspotRequest('POST', '/crm/v4/associations/deals/0-970/batch/read', {
-                inputs: [{ id: String(dealId) }]
-              });
-              const ids = (v4Data.results || []).flatMap(r => (r.to || []).map(t => t.toObjectId || t.id));
-              debug.paths_tried.push('deal ' + dealId + ' -> 0-970 v4: found ' + ids.length);
-              allPlacementIds = allPlacementIds.concat(ids);
-            } catch (e) {
-              debug.errors.push('deal->po v4: ' + e.message);
-            }
-          }
-        }
-      } catch (e) {
-        debug.errors.push('company->deals: ' + e.message);
-      }
-
-      // Method 2: company -> placement orders directly (v3)
-      if (allPlacementIds.length === 0) {
+      // Step 2: Get placement orders via deals
+      for (const dealId of dealIds) {
         try {
-          const directData = await hubspotRequest('GET', '/crm/v3/objects/companies/' + companyId + '/associations/0-970');
-          const ids = (directData.results || []).map(r => r.toObjectId || r.id);
-          debug.paths_tried.push('company->po v3 direct: found ' + ids.length);
+          const poData = await hubspotRequest('GET', '/crm/v3/objects/deals/' + dealId + '/associations/0-970');
+          const ids = (poData.results || []).map(r => r.toObjectId || r.id);
           allPlacementIds = allPlacementIds.concat(ids);
-        } catch (e) {
-          debug.errors.push('company->po v3: ' + e.message);
-        }
+        } catch (e) {}
       }
 
-      // Method 3: company -> placement orders directly (v4)
+      // Step 3: Also try direct company -> placement orders
       if (allPlacementIds.length === 0) {
         try {
-          const v4Data = await hubspotRequest('POST', '/crm/v4/associations/companies/0-970/batch/read', {
-            inputs: [{ id: String(companyId) }]
-          });
-          const ids = (v4Data.results || []).flatMap(r => (r.to || []).map(t => t.toObjectId || t.id));
-          debug.paths_tried.push('company->po v4 direct: found ' + ids.length);
+          const dd = await hubspotRequest('GET', '/crm/v3/objects/companies/' + companyId + '/associations/0-970');
+          const ids = (dd.results || []).map(r => r.toObjectId || r.id);
           allPlacementIds = allPlacementIds.concat(ids);
-        } catch (e) {
-          debug.errors.push('company->po v4: ' + e.message);
-        }
-      }
-
-      // Method 4: Search all placement orders and filter (last resort)
-      if (allPlacementIds.length === 0) {
-        try {
-          const searchData = await hubspotRequest('POST', '/crm/v3/objects/0-970/search', {
-            filterGroups: [],
-            limit: 100,
-            properties: ['candidate_name', 'hs_object_id', 'csat']
-          });
-          debug.paths_tried.push('search all 0-970: found ' + (searchData.results || []).length);
-          
-          // Return all for now with debug info so we can see what exists
-          const allPlacements = (searchData.results || []).map(r => ({
-            id: r.id,
-            candidate_name: r.properties?.candidate_name || null,
-            csat: r.properties?.csat || null
-          }));
-          
-          return res.status(200).json({ placements: allPlacements, debug });
-        } catch (e) {
-          debug.errors.push('search all: ' + e.message);
-        }
+        } catch (e) {}
       }
 
       // Deduplicate
       allPlacementIds = [...new Set(allPlacementIds.map(String))];
 
-      // Fetch details for found IDs
-      if (allPlacementIds.length > 0) {
-        try {
-          const batchData = await hubspotRequest('POST', '/crm/v3/objects/0-970/batch/read', {
-            inputs: allPlacementIds.map(id => ({ id: String(id) })),
-            properties: ['candidate_name', 'hs_object_id', 'csat']
-          });
-          const allPlacements = (batchData.results || []).map(r => ({
-            id: r.id,
-            candidate_name: r.properties?.candidate_name || null,
-            csat: r.properties?.csat || null
-          }));
-          return res.status(200).json({ placements: allPlacements, debug });
-        } catch (e) {
-          debug.errors.push('batch read: ' + e.message);
-        }
-      }
+      // Step 4: Fetch details individually (avoids batch/read scope issue)
+      const allPlacements = await fetchPlacementDetails(allPlacementIds);
 
-      return res.status(200).json({ placements: [], debug });
+      return res.status(200).json({ placements: allPlacements });
     }
 
     // SUBMIT FEEDBACK
