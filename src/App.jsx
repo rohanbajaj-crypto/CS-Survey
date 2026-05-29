@@ -128,6 +128,7 @@ export default function App() {
         await apiCall({
           action: 'submit_feedback',
           placementOrderId: w.id,
+          csatScore: rating,
           noteBody
         })
       }
