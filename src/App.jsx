@@ -227,6 +227,28 @@ export default function App() {
                   Found <strong>{smartWorkers.length} Smart Worker{smartWorkers.length > 1 ? 's' : ''}</strong> for {selectedCompany?.name}
                 </div>
 
+                {/* NPS Infographic */}
+                <div className="nps-infographic">
+                  <div className="nps-heading">HELP US GROW WITH YOUR FEEDBACK</div>
+                  <div className="nps-bands">
+                    <div className="nps-band nps-detractor">
+                      <div className="nps-band-title">DETRACTOR</div>
+                      <div className="nps-band-desc">Unsatisfied, low recommendation.</div>
+                      <div className="nps-band-range">0 – 6</div>
+                    </div>
+                    <div className="nps-band nps-passive">
+                      <div className="nps-band-title">PASSIVE</div>
+                      <div className="nps-band-desc">Content, but might choose elsewhere.</div>
+                      <div className="nps-band-range">7 – 8</div>
+                    </div>
+                    <div className="nps-band nps-promoter">
+                      <div className="nps-band-title">PROMOTER</div>
+                      <div className="nps-band-desc">Highly satisfied, will recommend!</div>
+                      <div className="nps-band-range">9 – 10</div>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="section-label">Performance Ratings</div>
 
                 {smartWorkers.map((w, idx) => {
