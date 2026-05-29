@@ -187,4 +187,143 @@ export default function App() {
           </div>
         </header>
 
-        {error && <div classN
+        {error && <div className="error-box">{error}</div>}
+
+        {/* FORM */}
+        {screen === 'form' && (
+          <div>
+            {/* Progress indicator */}
+            <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '1.5rem' }}>
+              {engineers.map((e, idx) => {
+                const rated = ratings[e.slot] !== null
+                return (
+                  <div key={e.slot} style={{
+                    flex: 1, height: 4, borderRadius: 2,
+                    background: rated ? '#059669' : idx <= currentStep ? '#d4d2cd' : '#eee',
+                    transition: 'background 0.3s'
+                  }} />
+                )
+              })}
+            </div>
+
+            {/* Engineer rating cards — progressive reveal */}
+            {engineers.map((eng, idx) => {
+              const isVisible = idx <= currentStep
+              const rated = ratings[eng.slot] !== null
+              const ratingVal = ratings[eng.slot]
+
+              if (!isVisible) return null
+
+              return (
+                <div key={eng.slot} className={`card ${rated ? 'card-rated' : ''} fade-in`} style={{ marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div className="worker-name">{eng.name}</div>
+                      <div className="worker-sub">Engineer {eng.slot} of {engineers.length}</div>
+                    </div>
+                    {rated && (
+                      <div style={{
+                        width: 40, height: 40, borderRadius: '50%',
+                        background: getRatingColor(ratingVal), color: 'white',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontWeight: 700, fontSize: '1rem'
+                      }}>
+                        {ratingVal}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: '#555', lineHeight: 1.5 }}>
+                    On a scale of 1 to 10, how would you rate <strong>{eng.name}</strong>'s overall performance? Consider their delivery quality, communication and ability to meet project timelines.
+                  </div>
+
+                  <div className="rating-row" style={{ marginTop: '0.75rem' }}>
+                    {[1,2,3,4,5,6,7,8,9,10].map(n => {
+                      const isSelected = ratingVal === n
+                      const bg = isSelected ? getRatingColor(n) : undefined
+                      return (
+                        <button
+                          key={n}
+                          className={`rating-btn ${isSelected ? 'selected' : ''}`}
+                          style={isSelected ? { background: bg, borderColor: bg } : {}}
+                          onClick={() => handleRating(eng.slot, n)}
+                        >
+                          {n}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div className="rating-label" style={{ color: getRatingColor(ratingVal) }}>
+                    {getRatingLabel(ratingVal)}
+                  </div>
+                </div>
+              )
+            })}
+
+            {/* Show respondent fields + submit only after all engineers are rated */}
+            {allRated && (
+              <div className="fade-in" style={{ marginTop: '1.5rem' }}>
+                <div style={{ padding: '1rem', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.85rem', color: '#166534' }}>
+                  All {engineers.length} engineer{engineers.length > 1 ? 's' : ''} rated. Please add your details and submit.
+                </div>
+
+                <div className="field">
+                  <label className="label">Your Name *</label>
+                  <input className="input" placeholder="e.g. John Smith" value={respondentName} onChange={e => setRespondentName(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label className="label">Your Role (optional)</label>
+                  <input className="input" placeholder="e.g. Engineering Manager" value={respondentRole} onChange={e => setRespondentRole(e.target.value)} />
+                </div>
+
+                <div className="submit-row" style={{ marginTop: '1rem' }}>
+                  <button
+                    className="btn btn-primary"
+                    disabled={!respondentName || submitting}
+                    onClick={submitFeedback}
+                  >
+                    {submitting ? <><span className="loader loader-white" /> Submitting...</> : 'Submit Feedback'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* SUCCESS */}
+        {screen === 'submitted' && (
+          <div className="success fade-in">
+            <div className="check-circle">✓</div>
+            <h2 className="success-title">Thank you, {respondentName}</h2>
+            <p className="success-text">
+              Your feedback for {engineers.length} Smart Worker{engineers.length > 1 ? 's' : ''} at {contact?.company} has been recorded.
+            </p>
+
+            <div className="summary-card">
+              <div className="summary-header">Summary</div>
+              {engineers.map(eng => {
+                const r = ratings[eng.slot]
+                return (
+                  <div key={eng.slot} className="summary-row">
+                    <span className="summary-name">{eng.name}</span>
+                    <span className="summary-score" style={{ color: getRatingColor(r) }}>{r}/10</span>
+                  </div>
+                )
+              })}
+              <div className="summary-row" style={{ borderTop: '2px solid #e8e6e2', marginTop: '0.25rem', paddingTop: '0.75rem' }}>
+                <span className="summary-name" style={{ fontWeight: 700 }}>Average</span>
+                <span className="summary-score" style={{ fontWeight: 700 }}>
+                  {(engineers.reduce((sum, e) => sum + ratings[e.slot], 0) / engineers.length).toFixed(1)}/10
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <footer className="footer">
+          Smart Worker Feedback System
+        </footer>
+      </div>
+    </div>
+  )
+}
