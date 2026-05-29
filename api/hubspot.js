@@ -42,7 +42,7 @@ module.exports = async function handler(req, res) {
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { return res.status(400).json({ error: 'Invalid JSON' }); } }
 
-  const { action, companyId, companyName, contactId, noteBody, csat_score } = body || {};
+  const { action, companyId, companyName, contactId, noteBody, csatScore, aiScore } = body || {};
 
   try {
     // SEARCH COMPANIES
@@ -59,7 +59,6 @@ module.exports = async function handler(req, res) {
     if (action === 'get_placements') {
       const debug = { steps: [], errors: [] };
 
-      // Search contacts with contact_type = "Smart Worker" associated with this company
       let smartWorkers = [];
       let after = undefined;
       let page = 0;
@@ -81,7 +80,7 @@ module.exports = async function handler(req, res) {
                 }
               ]
             }],
-            properties: ['firstname', 'lastname', 'email', 'contact_type', 'csat_score', 'jobtitle'],
+            properties: ['firstname', 'lastname', 'email', 'contact_type', 'csat_score', 'ai_score', 'jobtitle'],
             limit: 100
           };
           if (after) searchBody.after = after;
@@ -92,7 +91,8 @@ module.exports = async function handler(req, res) {
             candidate_name: [r.properties?.firstname, r.properties?.lastname].filter(Boolean).join(' ') || null,
             email: r.properties?.email || null,
             jobtitle: r.properties?.jobtitle || null,
-            csat_score: r.properties?.csat_score || null
+            csat_score: r.properties?.csat_score || null,
+            ai_score: r.properties?.ai_score || null
           }));
           smartWorkers = smartWorkers.concat(contacts);
           after = searchData.paging?.next?.after || null;
@@ -105,23 +105,22 @@ module.exports = async function handler(req, res) {
           if (page === 0) {
             debug.steps.push('trying fallback: all contacts for company');
             try {
-              // Get contact IDs associated with company
               const assocData = await hubspotRequest('GET', '/crm/v3/objects/companies/' + companyId + '/associations/contacts');
               const contactIds = (assocData.results || []).map(r => String(r.toObjectId || r.id));
               debug.steps.push('company contacts: ' + contactIds.length);
 
               if (contactIds.length > 0) {
-                // Fetch each contact and filter by type
                 for (const cid of contactIds) {
                   try {
-                    const c = await hubspotRequest('GET', '/crm/v3/objects/contacts/' + cid + '?properties=firstname,lastname,email,contact_type,csat_score,jobtitle');
+                    const c = await hubspotRequest('GET', '/crm/v3/objects/contacts/' + cid + '?properties=firstname,lastname,email,contact_type,csat_score,ai_score,jobtitle');
                     if (c.properties?.contact_type === 'Smart Worker') {
                       smartWorkers.push({
                         id: c.id,
                         candidate_name: [c.properties?.firstname, c.properties?.lastname].filter(Boolean).join(' ') || null,
                         email: c.properties?.email || null,
                         jobtitle: c.properties?.jobtitle || null,
-                        csat_score: c.properties?.csat_score || null
+                        csat_score: c.properties?.csat_score || null,
+                        ai_score: c.properties?.ai_score || null
                       });
                     }
                   } catch (e2) {
@@ -142,14 +141,17 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ placements: smartWorkers, debug });
     }
 
-    // SUBMIT FEEDBACK — writes csat_score to contact + creates note
+    // SUBMIT FEEDBACK — writes csat_score + ai_score to contact + creates note
     if (action === 'submit_feedback') {
       const results = { scoreUpdated: false, noteCreated: false, errors: [] };
 
-      // Step 1: Update csat_score on the contact
+      // Step 1: Update csat_score and ai_score on the contact
       try {
         await hubspotRequest('PATCH', '/crm/v3/objects/contacts/' + contactId, {
-          properties: { csat_score: String(csat_scoreScore) }
+          properties: {
+            csat_score: String(csatScore),
+            ai_score: String(aiScore)
+          }
         });
         results.scoreUpdated = true;
       } catch (e) { results.errors.push('Score: ' + e.message); }
