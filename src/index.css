@@ -170,6 +170,69 @@ body {
   margin-bottom: 1rem;
 }
 
+/* Question blocks inside cards */
+.question-block {
+  margin-bottom: 1.25rem;
+}
+.question-block:last-of-type {
+  margin-bottom: 0;
+}
+.question-text {
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin-bottom: 0.75rem;
+  color: #1a1a1a;
+}
+.question-num {
+  font-weight: 700;
+  margin-right: 0.25rem;
+}
+.question-hint {
+  color: #888;
+  font-size: 0.82rem;
+}
+
+/* Follow-up comment boxes */
+.followup-block {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 8px;
+}
+.followup-low {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+.followup-high {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+.followup-heading {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  color: #1a1a1a;
+}
+.followup-desc {
+  font-size: 0.8rem;
+  color: #666;
+  margin-bottom: 0.65rem;
+  line-height: 1.5;
+}
+.textarea {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border: 1.5px solid #d4d2cd;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  background: white;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s;
+  line-height: 1.5;
+}
+.textarea:focus { border-color: #1a1a1a; }
+
 /* Rating Buttons */
 .rating-row {
   display: flex;
@@ -302,7 +365,74 @@ body {
 }
 .summary-row:last-child { border-bottom: none; }
 .summary-name { font-weight: 500; font-size: 0.9rem; }
+.summary-scores {
+  display: flex;
+  gap: 1rem;
+}
+.summary-score-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+}
+.summary-score-label {
+  font-size: 0.65rem;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 .summary-score { font-weight: 700; font-size: 0.95rem; }
+
+/* NPS Infographic */
+.nps-infographic {
+  margin: 0 0 1.5rem;
+  text-align: center;
+}
+.nps-heading {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #e87722;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.85rem;
+  text-transform: uppercase;
+}
+.nps-bands {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+.nps-band {
+  border: 2px solid #1a1a1a;
+  border-radius: 6px;
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  text-align: center;
+}
+.nps-band-title {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.nps-band-desc {
+  font-size: 0.75rem;
+  color: #555;
+  line-height: 1.4;
+}
+.nps-band-range {
+  font-size: 1.3rem;
+  font-weight: 800;
+  margin-top: 2px;
+}
+.nps-detractor .nps-band-title,
+.nps-detractor .nps-band-range { color: #dc2626; }
+.nps-passive .nps-band-title,
+.nps-passive .nps-band-range { color: #d97706; }
+.nps-promoter .nps-band-title,
+.nps-promoter .nps-band-range { color: #16a34a; }
 
 /* Footer */
 .footer {
@@ -340,4 +470,9 @@ body {
   .title { font-size: 1.7rem; }
   .rating-btn { width: 38px; height: 38px; font-size: 0.85rem; }
   .scale-legend { flex-direction: column; gap: 0.4rem; }
+  .nps-bands { gap: 6px; }
+  .nps-band { padding: 10px 6px; }
+  .nps-band-title { font-size: 0.7rem; }
+  .nps-band-desc { font-size: 0.68rem; }
+  .nps-band-range { font-size: 1.1rem; }
 }
