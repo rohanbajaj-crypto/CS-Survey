@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 const API_URL = '/api/hubspot'
 
 export default function App() {
-  const [screen, setScreen] = useState('form') // form | submitted
+  const [screen, setScreen] = useState('form')
   const [companySearch, setCompanySearch] = useState('')
   const [companies, setCompanies] = useState([])
   const [selectedCompany, setSelectedCompany] = useState(null)
@@ -19,7 +19,6 @@ export default function App() {
   const debounceRef = useRef(null)
   const dropdownRef = useRef(null)
 
-  // Check for ?company= URL param (pre-fill)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const co = params.get('company')
@@ -29,7 +28,6 @@ export default function App() {
     }
   }, [])
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handler = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -58,7 +56,6 @@ export default function App() {
       const data = await apiCall({ action: 'search_companies', companyName: query })
       setCompanies(data.companies || [])
       setShowDropdown(true)
-      // Auto-select if exact match from URL param
       if (autoSelect && data.companies?.length === 1) {
         selectCompany(data.companies[0])
       }
@@ -89,7 +86,7 @@ export default function App() {
       const workers = data.placements || []
 
       if (workers.length === 0) {
-        setError(`No placement orders found for ${company.name}. Ensure placement orders are associated and have candidate names populated.`)
+        setError(`No Smart Workers found for ${company.name}. Make sure contacts with Contact Type = "Smart Worker" are associated with this company.`)
       } else {
         setSmartWorkers(workers)
         const initialRatings = {}
@@ -127,7 +124,7 @@ export default function App() {
 
         await apiCall({
           action: 'submit_feedback',
-          placementOrderId: w.id,
+          contactId: w.id,
           csatScore: rating,
           noteBody
         })
@@ -167,7 +164,6 @@ export default function App() {
   return (
     <div className="page">
       <div className="container">
-        {/* HEADER */}
         <header className="header">
           <div className="eyebrow">Client Feedback</div>
           <h1 className="title">Smart Worker<br />Performance Review</h1>
@@ -183,10 +179,8 @@ export default function App() {
 
         {error && <div className="error-box">{error}</div>}
 
-        {/* FORM SCREEN */}
         {screen === 'form' && (
           <div>
-            {/* Company Search */}
             <div className="field" ref={dropdownRef} style={{ position: 'relative' }}>
               <label className="label">Company</label>
               <input
@@ -214,7 +208,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Rating Form */}
             {smartWorkers.length > 0 && !loading && (
               <div className="fade-in">
                 <div className="found-banner">
@@ -238,7 +231,9 @@ export default function App() {
                   return (
                     <div key={w.id} className={`card ${rated ? 'card-rated' : ''}`}>
                       <div className="worker-name">{w.candidate_name || `Smart Worker ${idx + 1}`}</div>
-                      <div className="worker-sub">Placement #{idx + 1} of {smartWorkers.length}</div>
+                      <div className="worker-sub">
+                        {w.jobtitle ? w.jobtitle + ' • ' : ''}Placement #{idx + 1} of {smartWorkers.length}
+                      </div>
                       <div className="rating-row">
                         {[1,2,3,4,5,6,7,8,9,10].map(n => {
                           const isSelected = ratingVal === n
@@ -281,7 +276,6 @@ export default function App() {
           </div>
         )}
 
-        {/* SUCCESS SCREEN */}
         {screen === 'submitted' && (
           <div className="success fade-in">
             <div className="check-circle">✓</div>
