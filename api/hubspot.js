@@ -42,7 +42,7 @@ module.exports = async function handler(req, res) {
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { return res.status(400).json({ error: 'Invalid JSON' }); } }
 
-  const { action, companyId, companyName, contactId, noteBody, csatScore } = body || {};
+  const { action, companyId, companyName, contactId, noteBody, csat_score } = body || {};
 
   try {
     // SEARCH COMPANIES
@@ -81,7 +81,7 @@ module.exports = async function handler(req, res) {
                 }
               ]
             }],
-            properties: ['firstname', 'lastname', 'email', 'contact_type', 'csat', 'jobtitle'],
+            properties: ['firstname', 'lastname', 'email', 'contact_type', 'csat_score', 'jobtitle'],
             limit: 100
           };
           if (after) searchBody.after = after;
@@ -92,7 +92,7 @@ module.exports = async function handler(req, res) {
             candidate_name: [r.properties?.firstname, r.properties?.lastname].filter(Boolean).join(' ') || null,
             email: r.properties?.email || null,
             jobtitle: r.properties?.jobtitle || null,
-            csat: r.properties?.csat || null
+            csat_score: r.properties?.csat_score || null
           }));
           smartWorkers = smartWorkers.concat(contacts);
           after = searchData.paging?.next?.after || null;
@@ -114,14 +114,14 @@ module.exports = async function handler(req, res) {
                 // Fetch each contact and filter by type
                 for (const cid of contactIds) {
                   try {
-                    const c = await hubspotRequest('GET', '/crm/v3/objects/contacts/' + cid + '?properties=firstname,lastname,email,contact_type,csat,jobtitle');
+                    const c = await hubspotRequest('GET', '/crm/v3/objects/contacts/' + cid + '?properties=firstname,lastname,email,contact_type,csat_score,jobtitle');
                     if (c.properties?.contact_type === 'Smart Worker') {
                       smartWorkers.push({
                         id: c.id,
                         candidate_name: [c.properties?.firstname, c.properties?.lastname].filter(Boolean).join(' ') || null,
                         email: c.properties?.email || null,
                         jobtitle: c.properties?.jobtitle || null,
-                        csat: c.properties?.csat || null
+                        csat_score: c.properties?.csat_score || null
                       });
                     }
                   } catch (e2) {
@@ -142,14 +142,14 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ placements: smartWorkers, debug });
     }
 
-    // SUBMIT FEEDBACK — writes CSAT to contact + creates note
+    // SUBMIT FEEDBACK — writes csat_score to contact + creates note
     if (action === 'submit_feedback') {
       const results = { scoreUpdated: false, noteCreated: false, errors: [] };
 
-      // Step 1: Update csat on the contact
+      // Step 1: Update csat_score on the contact
       try {
         await hubspotRequest('PATCH', '/crm/v3/objects/contacts/' + contactId, {
-          properties: { csat: String(csatScore) }
+          properties: { csat_score: String(csat_scoreScore) }
         });
         results.scoreUpdated = true;
       } catch (e) { results.errors.push('Score: ' + e.message); }
