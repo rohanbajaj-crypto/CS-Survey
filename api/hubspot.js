@@ -107,6 +107,13 @@ module.exports = async function handler(req, res) {
         }
       } catch (e) {}
 
+      var hasExistingScores = false;
+      for (var m = 1; m <= MAX_ENGINEERS; m++) {
+        if (scoreProps['engineer_' + m + '_csat'] && scoreProps['engineer_' + m + '_csat'] !== '') {
+          hasExistingScores = true;
+          break;
+        }
+      }
       return res.status(200).json({
         contact: {
           id: contact.id,
@@ -116,7 +123,8 @@ module.exports = async function handler(req, res) {
           company: companyNameResult,
           last_csat_period: contact.properties?.last_csat_period || null
         },
-        engineers: engineers
+        engineers: engineers,
+        hasExistingScores: hasExistingScores
       });
     }
 
