@@ -52,7 +52,7 @@ export default function App() {
       const data = await apiCall({ action: 'get_contact', contactId: cid })
 
       // Check if already submitted for this period (from HubSpot property)
-      if (data.contact.last_csat_period === currentPeriod) {
+      if (data.contact.last_csat_period === currentPeriod && data.hasExistingScores) {
         setContact(data.contact)
         setScreen('already-submitted')
         return
