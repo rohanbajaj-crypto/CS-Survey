@@ -51,7 +51,6 @@ export default function App() {
     try {
       const data = await apiCall({ action: 'get_contact', contactId: cid })
 
-      // Check if already submitted for this period (from HubSpot property)
       if (data.contact.last_csat_period === currentPeriod && data.hasExistingScores) {
         setContact(data.contact)
         setScreen('already-submitted')
@@ -127,9 +126,9 @@ export default function App() {
       let noteRows = scores.map(s => {
         const csatLabel = s.csat <= 7 ? 'Needs Improvement' : s.csat === 8 ? 'Meeting Expectations' : 'Exceeded Expectations'
         const aiLabel = s.ai_score <= 7 ? 'Needs Improvement' : s.ai_score === 8 ? 'Meeting Expectations' : 'Exceeded Expectations'
-        let row = `<tr><td style="padding:6px 12px;border-bottom:1px solid #eee"><strong>${s.name}</strong></td><td style="padding:6px 12px;border-bottom:1px solid #eee;text-align:center">${s.csat}/10</td><td style="padding:6px 12px;border-bottom:1px solid #eee">${csatLabel}</td><td style="padding:6px 12px;border-bottom:1px solid #eee;text-align:center">${s.ai_score}/10</td><td style="padding:6px 12px;border-bottom:1px solid #eee">${aiLabel}</td></tr>`
+        let row = `<tr><td style="padding:6px 12px;border-bottom:1px solid #333"><strong>${s.name}</strong></td><td style="padding:6px 12px;border-bottom:1px solid #333;text-align:center">${s.csat}/10</td><td style="padding:6px 12px;border-bottom:1px solid #333">${csatLabel}</td><td style="padding:6px 12px;border-bottom:1px solid #333;text-align:center">${s.ai_score}/10</td><td style="padding:6px 12px;border-bottom:1px solid #333">${aiLabel}</td></tr>`
         if (s.comment) {
-          row += `<tr><td colspan="5" style="padding:6px 12px 12px;border-bottom:2px solid #ddd;color:#555;font-style:italic">${s.csat <= 7 ? '<strong>Improvement feedback:</strong> ' : '<strong>Comments:</strong> '}${s.comment}</td></tr>`
+          row += `<tr><td colspan="5" style="padding:6px 12px 12px;border-bottom:2px solid #444;color:#999;font-style:italic">${s.csat <= 7 ? '<strong>Improvement feedback:</strong> ' : '<strong>Comments:</strong> '}${s.comment}</td></tr>`
         }
         return row
       }).join('')
@@ -143,7 +142,7 @@ export default function App() {
         `<p><strong>Avg CSAT:</strong> ${avgCsat}/10 &nbsp; | &nbsp; <strong>Avg AI Score:</strong> ${avgAi}/10</p>`,
         `<br/>`,
         `<table style="border-collapse:collapse;width:100%">`,
-        `<tr style="background:#f7f7f7"><th style="padding:8px 12px;text-align:left">Smart Worker</th><th style="padding:8px 12px;text-align:center">CSAT</th><th style="padding:8px 12px">Rating</th><th style="padding:8px 12px;text-align:center">AI Score</th><th style="padding:8px 12px">Rating</th></tr>`,
+        `<tr style="background:#1a1a1a"><th style="padding:8px 12px;text-align:left">Smart Worker</th><th style="padding:8px 12px;text-align:center">CSAT</th><th style="padding:8px 12px">Rating</th><th style="padding:8px 12px;text-align:center">AI Score</th><th style="padding:8px 12px">Rating</th></tr>`,
         noteRows,
         `</table>`
       ].join('')
@@ -165,9 +164,9 @@ export default function App() {
 
   const getRatingColor = (value) => {
     if (!value) return 'transparent'
-    if (value <= 7) return '#dc2626'
-    if (value === 8) return '#d97706'
-    return '#059669'
+    if (value <= 7) return '#b10500'
+    if (value === 8) return '#eb7f37'
+    return '#005720'
   }
 
   const getRatingLabel = (value) => {
@@ -179,7 +178,7 @@ export default function App() {
 
   const RatingRow = ({ label, value, onSelect }) => (
     <div style={{ marginTop: '0.5rem' }}>
-      <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#444', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
+      <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#999999', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
       <div className="rating-row">
         {[1,2,3,4,5,6,7,8,9,10].map(n => {
           const isSelected = value === n
@@ -207,7 +206,7 @@ export default function App() {
       <div className="page">
         <div className="container" style={{ textAlign: 'center', paddingTop: '4rem' }}>
           <span className="loader" style={{ width: 32, height: 32 }} />
-          <p style={{ marginTop: '1rem', color: '#888' }}>Loading your feedback form...</p>
+          <p style={{ marginTop: '1rem', color: '#999999' }}>Loading your feedback form...</p>
         </div>
       </div>
     )
@@ -217,9 +216,9 @@ export default function App() {
     return (
       <div className="page">
         <div className="container" style={{ textAlign: 'center', paddingTop: '4rem' }}>
-          <h2 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: '1.5rem', marginBottom: '0.5rem' }}>Missing contact link</h2>
-          <p style={{ color: '#888' }}>This form requires a contact-specific link from your CS team.</p>
-          <p style={{ color: '#aaa', fontSize: '0.8rem', marginTop: '1rem' }}>Expected format: ?contact=123456789&period=Q3-2026</p>
+          <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem', color: '#f8f8f8' }}>Missing contact link</h2>
+          <p style={{ color: '#999999' }}>This form requires a contact-specific link from your CS team.</p>
+          <p style={{ color: '#666666', fontSize: '0.8rem', marginTop: '1rem' }}>Expected format: ?contact=123456789&period=Q3-2026</p>
         </div>
       </div>
     )
@@ -229,9 +228,9 @@ export default function App() {
     return (
       <div className="page">
         <div className="container" style={{ textAlign: 'center', paddingTop: '4rem' }}>
-          <h2 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: '1.5rem', marginBottom: '0.5rem' }}>Missing review period</h2>
-          <p style={{ color: '#888' }}>This link is missing the review period. Please contact your CS team for the correct link.</p>
-          <p style={{ color: '#aaa', fontSize: '0.8rem', marginTop: '1rem' }}>Expected format: ?contact=123456789&period=Q3-2026</p>
+          <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem', color: '#f8f8f8' }}>Missing review period</h2>
+          <p style={{ color: '#999999' }}>This link is missing the review period. Please contact your CS team for the correct link.</p>
+          <p style={{ color: '#666666', fontSize: '0.8rem', marginTop: '1rem' }}>Expected format: ?contact=123456789&period=Q3-2026</p>
         </div>
       </div>
     )
@@ -241,8 +240,8 @@ export default function App() {
     return (
       <div className="page">
         <div className="container" style={{ textAlign: 'center', paddingTop: '4rem' }}>
-          <h2 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: '1.5rem', marginBottom: '0.5rem', color: '#dc2626' }}>Something went wrong</h2>
-          <p style={{ color: '#888' }}>{error}</p>
+          <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem', color: '#b10500' }}>Something went wrong</h2>
+          <p style={{ color: '#999999' }}>{error}</p>
         </div>
       </div>
     )
@@ -252,10 +251,10 @@ export default function App() {
     return (
       <div className="page">
         <div className="container" style={{ textAlign: 'center', paddingTop: '4rem' }}>
-          <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#059669', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', margin: '0 auto 1.5rem' }}>✓</div>
-          <h2 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: '1.5rem', marginBottom: '0.5rem' }}>Feedback already submitted</h2>
-          <p style={{ color: '#888' }}>You have already submitted your feedback for <strong>{period}</strong>. Thank you!</p>
-          <p style={{ color: '#aaa', fontSize: '0.8rem', marginTop: '1rem' }}>If you need to make changes, please contact your CS team.</p>
+          <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#005720', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', margin: '0 auto 1.5rem' }}>✓</div>
+          <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem', color: '#f8f8f8' }}>Feedback already submitted</h2>
+          <p style={{ color: '#999999' }}>You have already submitted your feedback for <strong style={{ color: '#ff4d04' }}>{period}</strong>. Thank you!</p>
+          <p style={{ color: '#666666', fontSize: '0.8rem', marginTop: '1rem' }}>If you need to make changes, please contact your CS team.</p>
         </div>
       </div>
     )
@@ -268,17 +267,17 @@ export default function App() {
           <div className="eyebrow">Client Feedback — {period}</div>
           <h1 className="title">Smart Worker<br />Performance Review</h1>
           {contact && (
-            <div style={{ marginTop: '0.75rem', padding: '0.75rem 1rem', background: '#f0efec', borderRadius: '8px' }}>
-              <div style={{ fontSize: '0.9rem' }}><strong>{contact.company}</strong></div>
-              <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.15rem' }}>
+            <div style={{ marginTop: '0.75rem', padding: '0.75rem 1rem', background: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }}>
+              <div style={{ fontSize: '0.9rem', color: '#f8f8f8' }}><strong>{contact.company}</strong></div>
+              <div style={{ fontSize: '0.8rem', color: '#999999', marginTop: '0.15rem' }}>
                 Reporting Manager: {contact.firstname} {contact.lastname}
               </div>
             </div>
           )}
           <div className="scale-legend" style={{ marginTop: '0.75rem' }}>
-            <span className="scale-item"><span className="scale-dot" style={{ background: '#dc2626' }} />1–7 Needs Improvement</span>
-            <span className="scale-item"><span className="scale-dot" style={{ background: '#d97706' }} />8 Meeting Expectations</span>
-            <span className="scale-item"><span className="scale-dot" style={{ background: '#059669' }} />9–10 Exceeded Expectations</span>
+            <span className="scale-item"><span className="scale-dot" style={{ background: '#b10500' }} />1–7 Needs Improvement</span>
+            <span className="scale-item"><span className="scale-dot" style={{ background: '#eb7f37' }} />8 Meeting Expectations</span>
+            <span className="scale-item"><span className="scale-dot" style={{ background: '#005720' }} />9–10 Exceeded Expectations</span>
           </div>
         </header>
 
@@ -292,7 +291,7 @@ export default function App() {
                 return (
                   <div key={e.slot} style={{
                     flex: 1, height: 4, borderRadius: 2,
-                    background: done ? '#059669' : idx <= currentStep ? '#d4d2cd' : '#eee',
+                    background: done ? '#005720' : idx <= currentStep ? '#333' : '#1a1a1a',
                     transition: 'background 0.3s'
                   }} />
                 )
@@ -329,19 +328,19 @@ export default function App() {
                     )}
                   </div>
 
-                  <div style={{ marginTop: '1rem', fontSize: '0.85rem', color: '#333', lineHeight: 1.6 }}>
-                    On a scale of 1 to 10, how would you rate <strong>{eng.name}</strong>'s overall performance?
-                    <span style={{ display: 'block', fontSize: '0.78rem', color: '#888', marginTop: '0.15rem' }}>
+                  <div style={{ marginTop: '1rem', fontSize: '0.85rem', color: '#f8f8f8', lineHeight: 1.6 }}>
+                    On a scale of 1 to 10, how would you rate <strong style={{ color: '#ff4d04' }}>{eng.name}</strong>'s overall performance?
+                    <span style={{ display: 'block', fontSize: '0.78rem', color: '#999999', marginTop: '0.15rem' }}>
                       Consider their delivery quality, communication and ability to meet project timelines.
                     </span>
                   </div>
                   <RatingRow label="Overall Performance" value={csatVal} onSelect={(n) => handleCsatRating(eng.slot, n)} />
 
                   {csatVal !== null && (
-                    <div className="fade-in" style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid #f0efec' }}>
-                      <div style={{ fontSize: '0.85rem', color: '#333', lineHeight: 1.6 }}>
-                        On a scale of 1 to 10, how effectively is <strong>{eng.name}</strong> using AI tools to improve speed and output quality?
-                        <span style={{ display: 'block', fontSize: '0.78rem', color: '#888', marginTop: '0.15rem' }}>
+                    <div className="fade-in" style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid #222' }}>
+                      <div style={{ fontSize: '0.85rem', color: '#f8f8f8', lineHeight: 1.6 }}>
+                        On a scale of 1 to 10, how effectively is <strong style={{ color: '#ff4d04' }}>{eng.name}</strong> using AI tools to improve speed and output quality?
+                        <span style={{ display: 'block', fontSize: '0.78rem', color: '#999999', marginTop: '0.15rem' }}>
                           Consider if AI use helped them deliver faster or better than a regular developer.
                         </span>
                       </div>
@@ -350,10 +349,10 @@ export default function App() {
                   )}
 
                   {done && (
-                    <div className="fade-in" style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid #f0efec' }}>
+                    <div className="fade-in" style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid #222' }}>
                       {needsComment ? (
                         <>
-                          <div style={{ padding: '0.6rem 0.8rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '0.82rem', color: '#991b1b', marginBottom: '0.6rem', lineHeight: 1.5 }}>
+                          <div style={{ padding: '0.6rem 0.8rem', background: 'rgba(177,5,0,0.1)', border: '1px solid rgba(177,5,0,0.3)', borderRadius: '6px', fontSize: '0.82rem', color: '#ff6b6b', marginBottom: '0.6rem', lineHeight: 1.5 }}>
                             We're sorry to hear that. You gave a low rating, and we'd really appreciate your feedback. What can we do to improve and make your experience better?
                           </div>
                           <textarea
@@ -362,10 +361,10 @@ export default function App() {
                             placeholder="Please share your feedback so we can improve... (required)"
                             value={commentVal}
                             onChange={e => handleComment(eng.slot, e.target.value)}
-                            style={{ resize: 'vertical', fontFamily: 'inherit', borderColor: commentMissing ? '#fca5a5' : undefined }}
+                            style={{ resize: 'vertical', fontFamily: 'inherit', borderColor: commentMissing ? '#b10500' : undefined }}
                           />
                           {commentMissing && (
-                            <div style={{ fontSize: '0.75rem', color: '#dc2626', marginTop: '0.3rem' }}>
+                            <div style={{ fontSize: '0.75rem', color: '#b10500', marginTop: '0.3rem' }}>
                               Feedback is required for low scores
                             </div>
                           )}
@@ -392,11 +391,11 @@ export default function App() {
             {allRated && (
               <div className="fade-in" style={{ marginTop: '1.5rem' }}>
                 {lowScoreMissingComments.length > 0 ? (
-                  <div style={{ padding: '1rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.85rem', color: '#991b1b' }}>
+                  <div style={{ padding: '1rem', background: 'rgba(177,5,0,0.1)', border: '1px solid rgba(177,5,0,0.3)', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.85rem', color: '#ff6b6b' }}>
                     Please provide feedback for {lowScoreMissingComments.map(e => e.name).join(', ')} before submitting (low score requires comments).
                   </div>
                 ) : (
-                  <div style={{ padding: '1rem', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.85rem', color: '#166534' }}>
+                  <div style={{ padding: '1rem', background: 'rgba(0,87,32,0.1)', border: '1px solid rgba(0,87,32,0.3)', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.85rem', color: '#34d399' }}>
                     All {engineers.length} engineer{engineers.length > 1 ? 's' : ''} rated. Please add your details and submit.
                   </div>
                 )}
@@ -429,13 +428,13 @@ export default function App() {
             <div className="check-circle">✓</div>
             <h2 className="success-title">Thank you, {respondentName}</h2>
             <p className="success-text">
-              Your feedback for {engineers.length} Smart Worker{engineers.length > 1 ? 's' : ''} at {contact?.company} for {period} has been recorded successfully.
+              Your feedback for {engineers.length} Smart Worker{engineers.length > 1 ? 's' : ''} at {contact?.company} for <strong style={{ color: '#ff4d04' }}>{period}</strong> has been recorded successfully.
             </p>
 
             <div className="summary-card">
               <div className="summary-header">Summary — {period}</div>
               {engineers.map(eng => (
-                <div key={eng.slot} style={{ padding: '0.6rem 0', borderBottom: '1px solid #f0efec' }}>
+                <div key={eng.slot} style={{ padding: '0.6rem 0', borderBottom: '1px solid #222' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span className="summary-name">{eng.name}</span>
                     <span style={{ fontSize: '0.8rem' }}>
@@ -445,15 +444,15 @@ export default function App() {
                     </span>
                   </div>
                   {comments[eng.slot] && (
-                    <div style={{ fontSize: '0.78rem', color: '#666', fontStyle: 'italic', marginTop: '0.25rem' }}>
+                    <div style={{ fontSize: '0.78rem', color: '#666666', fontStyle: 'italic', marginTop: '0.25rem' }}>
                       "{comments[eng.slot]}"
                     </div>
                   )}
                 </div>
               ))}
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 0 0', borderTop: '2px solid #e8e6e2', marginTop: '0.25rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Average</span>
-                <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 0 0', borderTop: '2px solid #333', marginTop: '0.25rem' }}>
+                <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#f8f8f8' }}>Average</span>
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#ff4d04' }}>
                   CSAT {(engineers.reduce((sum, e) => sum + csatRatings[e.slot], 0) / engineers.length).toFixed(1)}
                   {' / '}
                   AI {(engineers.reduce((sum, e) => sum + aiRatings[e.slot], 0) / engineers.length).toFixed(1)}
@@ -461,7 +460,7 @@ export default function App() {
               </div>
             </div>
 
-            <p style={{ color: '#aaa', fontSize: '0.78rem', marginTop: '1.5rem' }}>
+            <p style={{ color: '#666666', fontSize: '0.78rem', marginTop: '1.5rem' }}>
               If you need to make changes to your submission, please contact your CS team.
             </p>
           </div>
