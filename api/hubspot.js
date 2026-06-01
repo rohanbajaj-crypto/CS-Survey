@@ -1,4 +1,5 @@
 const https = require('https');
+const MAX_ENGINEERS = 10;
 
 function hubspotRequest(method, path, body) {
   const token = process.env.HUBSPOT_TOKEN;
@@ -42,10 +43,9 @@ module.exports = async function handler(req, res) {
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { return res.status(400).json({ error: 'Invalid JSON' }); } }
 
-  const { action, contactId, companyName, noteBody } = body || {};
+  const { action, contactId, companyName, noteBody, scores } = body || {};
 
   try {
-    // SEARCH COMPANIES (kept for fallback/admin use)
     if (action === 'search_companies') {
       const data = await hubspotRequest('POST', '/crm/v3/objects/companies/search', {
         query: companyName || '', limit: 10, properties: ['name', 'domain']
@@ -55,24 +55,29 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // GET CONTACT (LM) + THEIR ENGINEERS
     if (action === 'get_contact') {
-      const props = [
-        'firstname', 'lastname', 'email', 'jobtitle', 'company',
-        'engineer_1', 'engineer_2', 'engineer_3', 'engineer_4', 'engineer_5'
-      ].join(',');
+      const props = ['firstname', 'lastname', 'email', 'jobtitle', 'company'];
+      for (let i = 1; i <= MAX_ENGINEERS; i++) {
+        props.push('engineer_' + i);
+        props.push('engineer_' + i + '_csat');
+        props.push('engineer_' + i + '_ai_score');
+      }
 
-      const contact = await hubspotRequest('GET', '/crm/v3/objects/contacts/' + contactId + '?properties=' + props);
+      const contact = await hubspotRequest('GET', '/crm/v3/objects/contacts/' + contactId + '?properties=' + props.join(','));
 
       const engineers = [];
-      for (let i = 1; i <= 5; i++) {
+      for (let i = 1; i <= MAX_ENGINEERS; i++) {
         const name = contact.properties?.['engineer_' + i];
         if (name && name.trim()) {
-          engineers.push({ slot: i, name: name.trim() });
+          engineers.push({
+            slot: i,
+            name: name.trim(),
+            csat: contact.properties?.['engineer_' + i + '_csat'] || null,
+            ai_score: contact.properties?.['engineer_' + i + '_ai_score'] || null
+          });
         }
       }
 
-      // Get associated company name
       let companyName = contact.properties?.company || '';
       try {
         const assocData = await hubspotRequest('GET', '/crm/v3/objects/contacts/' + contactId + '/associations/companies');
@@ -95,32 +100,22 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // SUBMIT FEEDBACK — create note on the LM contact with all scores
     if (action === 'submit_feedback') {
-      const results = { noteCreated: false, errors: [] };
+      const results = { scoresUpdated: false, noteCreated: false, errors: [] };
+
+      if (scores && scores.length > 0) {
+        const properties = {};
+        for (const s of scores) {
+          properties['engineer_' + s.slot + '_csat'] = String(s.csat);
+          properties['engineer_' + s.slot + '_ai_score'] = String(s.ai_score);
+        }
+        try {
+          await hubspotRequest('PATCH', '/crm/v3/objects/contacts/' + contactId, { properties });
+          results.scoresUpdated = true;
+        } catch (e) { results.errors.push('Scores: ' + e.message); }
+      }
 
       try {
         await hubspotRequest('POST', '/crm/v3/objects/notes', {
           properties: { hs_note_body: noteBody, hs_timestamp: new Date().toISOString() },
           associations: [{
-            to: { id: Number(contactId) },
-            types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 202 }]
-          }]
-        });
-        results.noteCreated = true;
-      } catch (e) {
-        // Fallback without association
-        try {
-          await hubspotRequest('POST', '/crm/v3/objects/notes', {
-            properties: { hs_note_body: noteBody + '\n[Contact ID: ' + contactId + ']', hs_timestamp: new Date().toISOString() }
-          });
-          results.noteCreated = true;
-        } catch (e2) { results.errors.push('Note: ' + e2.message); }
-      }
-
-      return res.status(200).json({ success: results.noteCreated, ...results });
-    }
-
-    return res.status(400).json({ error: 'Unknown action' });
-  } catch (err) { return res.status(500).json({ error: err.message }); }
-};
