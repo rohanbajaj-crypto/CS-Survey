@@ -14,15 +14,25 @@ export default function App() {
   const [respondentName, setRespondentName] = useState('')
   const [respondentRole, setRespondentRole] = useState('')
   const [currentStep, setCurrentStep] = useState(0)
+  const [period, setPeriod] = useState('')
+  const [contactId, setContactId] = useState('')
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const contactId = params.get('contact')
-    if (contactId) {
-      loadContact(contactId)
-    } else {
+    const cid = params.get('contact')
+    const p = params.get('period') || ''
+    setContactId(cid || '')
+    setPeriod(p)
+
+    if (!cid) {
       setScreen('no-contact')
+      return
     }
+    if (!p) {
+      setScreen('no-period')
+      return
+    }
+    loadContact(cid, p)
   }, [])
 
   const apiCall = async (body) => {
@@ -35,11 +45,19 @@ export default function App() {
     return resp.json()
   }
 
-  const loadContact = async (contactId) => {
+  const loadContact = async (cid, currentPeriod) => {
     setScreen('loading')
     setError(null)
     try {
-      const data = await apiCall({ action: 'get_contact', contactId })
+      const data = await apiCall({ action: 'get_contact', contactId: cid })
+
+      // Check if already submitted for this period (from HubSpot property)
+      if (data.contact.last_csat_period === currentPeriod) {
+        setContact(data.contact)
+        setScreen('already-submitted')
+        return
+      }
+
       if (!data.engineers || data.engineers.length === 0) {
         setError('No engineers found for this contact. Make sure Engineer 1-10 properties have names filled in.')
         setScreen('error')
@@ -74,7 +92,6 @@ export default function App() {
     setComments(prev => ({ ...prev, [slot]: value }))
   }
 
-  // Auto-advance when both scores are filled for current engineer
   useEffect(() => {
     engineers.forEach((eng, idx) => {
       if (csatRatings[eng.slot] !== null && aiRatings[eng.slot] !== null && idx < engineers.length - 1) {
@@ -85,8 +102,13 @@ export default function App() {
 
   const allRated = engineers.length > 0 && engineers.every(e => csatRatings[e.slot] !== null && aiRatings[e.slot] !== null)
 
+  const lowScoreMissingComments = engineers.filter(e =>
+    csatRatings[e.slot] !== null && csatRatings[e.slot] <= 7 && (!comments[e.slot] || !comments[e.slot].trim())
+  )
+  const canSubmit = allRated && respondentName.trim() && lowScoreMissingComments.length === 0
+
   const submitFeedback = async () => {
-    if (!allRated || !respondentName) return
+    if (!canSubmit) return
     setSubmitting(true)
     setError(null)
 
@@ -113,8 +135,9 @@ export default function App() {
       }).join('')
 
       const noteBody = [
-        `<h2>CSAT & AI Score Feedback — ${contact.company}</h2>`,
-        `<p><strong>Learning Manager:</strong> ${contact.firstname} ${contact.lastname}</p>`,
+        `<h2>CSAT & AI Score Feedback — ${contact.company} (${period})</h2>`,
+        `<p><strong>Period:</strong> ${period}</p>`,
+        `<p><strong>Reporting Manager:</strong> ${contact.firstname} ${contact.lastname}</p>`,
         `<p><strong>Submitted by:</strong> ${respondentName}${respondentRole ? ' (' + respondentRole + ')' : ''}</p>`,
         `<p><strong>Date:</strong> ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>`,
         `<p><strong>Avg CSAT:</strong> ${avgCsat}/10 &nbsp; | &nbsp; <strong>Avg AI Score:</strong> ${avgAi}/10</p>`,
@@ -129,6 +152,7 @@ export default function App() {
         action: 'submit_feedback',
         contactId: contact.id,
         scores,
+        period,
         noteBody
       })
 
@@ -195,7 +219,19 @@ export default function App() {
         <div className="container" style={{ textAlign: 'center', paddingTop: '4rem' }}>
           <h2 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: '1.5rem', marginBottom: '0.5rem' }}>Missing contact link</h2>
           <p style={{ color: '#888' }}>This form requires a contact-specific link from your CS team.</p>
-          <p style={{ color: '#aaa', fontSize: '0.8rem', marginTop: '1rem' }}>Expected format: ?contact=123456789</p>
+          <p style={{ color: '#aaa', fontSize: '0.8rem', marginTop: '1rem' }}>Expected format: ?contact=123456789&period=Q3-2026</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (screen === 'no-period') {
+    return (
+      <div className="page">
+        <div className="container" style={{ textAlign: 'center', paddingTop: '4rem' }}>
+          <h2 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: '1.5rem', marginBottom: '0.5rem' }}>Missing review period</h2>
+          <p style={{ color: '#888' }}>This link is missing the review period. Please contact your CS team for the correct link.</p>
+          <p style={{ color: '#aaa', fontSize: '0.8rem', marginTop: '1rem' }}>Expected format: ?contact=123456789&period=Q3-2026</p>
         </div>
       </div>
     )
@@ -212,17 +248,30 @@ export default function App() {
     )
   }
 
+  if (screen === 'already-submitted') {
+    return (
+      <div className="page">
+        <div className="container" style={{ textAlign: 'center', paddingTop: '4rem' }}>
+          <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#059669', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', margin: '0 auto 1.5rem' }}>✓</div>
+          <h2 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: '1.5rem', marginBottom: '0.5rem' }}>Feedback already submitted</h2>
+          <p style={{ color: '#888' }}>You have already submitted your feedback for <strong>{period}</strong>. Thank you!</p>
+          <p style={{ color: '#aaa', fontSize: '0.8rem', marginTop: '1rem' }}>If you need to make changes, please contact your CS team.</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="page">
       <div className="container">
         <header className="header">
-          <div className="eyebrow">Client Feedback</div>
+          <div className="eyebrow">Client Feedback — {period}</div>
           <h1 className="title">Smart Worker<br />Performance Review</h1>
           {contact && (
             <div style={{ marginTop: '0.75rem', padding: '0.75rem 1rem', background: '#f0efec', borderRadius: '8px' }}>
               <div style={{ fontSize: '0.9rem' }}><strong>{contact.company}</strong></div>
               <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.15rem' }}>
-                Learning Manager: {contact.firstname} {contact.lastname}
+                Reporting Manager: {contact.firstname} {contact.lastname}
               </div>
             </div>
           )}
@@ -237,7 +286,6 @@ export default function App() {
 
         {screen === 'form' && (
           <div>
-            {/* Progress bar */}
             <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '1.5rem' }}>
               {engineers.map((e, idx) => {
                 const done = bothRatedForSlot(e.slot)
@@ -251,19 +299,19 @@ export default function App() {
               })}
             </div>
 
-            {/* Engineer cards — progressive reveal */}
             {engineers.map((eng, idx) => {
               const isVisible = idx <= currentStep
               const done = bothRatedForSlot(eng.slot)
               const csatVal = csatRatings[eng.slot]
               const aiVal = aiRatings[eng.slot]
               const commentVal = comments[eng.slot]
+              const needsComment = csatVal !== null && csatVal <= 7
+              const commentMissing = needsComment && (!commentVal || !commentVal.trim())
 
               if (!isVisible) return null
 
               return (
                 <div key={eng.slot} className={`card ${done ? 'card-rated' : ''} fade-in`} style={{ marginBottom: '1.25rem' }}>
-                  {/* Header */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <div className="worker-name">{eng.name}</div>
@@ -281,20 +329,14 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* Question 1: CSAT */}
                   <div style={{ marginTop: '1rem', fontSize: '0.85rem', color: '#333', lineHeight: 1.6 }}>
                     On a scale of 1 to 10, how would you rate <strong>{eng.name}</strong>'s overall performance?
                     <span style={{ display: 'block', fontSize: '0.78rem', color: '#888', marginTop: '0.15rem' }}>
                       Consider their delivery quality, communication and ability to meet project timelines.
                     </span>
                   </div>
-                  <RatingRow
-                    label="Overall Performance"
-                    value={csatVal}
-                    onSelect={(n) => handleCsatRating(eng.slot, n)}
-                  />
+                  <RatingRow label="Overall Performance" value={csatVal} onSelect={(n) => handleCsatRating(eng.slot, n)} />
 
-                  {/* Question 2: AI Score — appears after CSAT is answered */}
                   {csatVal !== null && (
                     <div className="fade-in" style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid #f0efec' }}>
                       <div style={{ fontSize: '0.85rem', color: '#333', lineHeight: 1.6 }}>
@@ -303,30 +345,30 @@ export default function App() {
                           Consider if AI use helped them deliver faster or better than a regular developer.
                         </span>
                       </div>
-                      <RatingRow
-                        label="AI Tool Adoption"
-                        value={aiVal}
-                        onSelect={(n) => handleAiRating(eng.slot, n)}
-                      />
+                      <RatingRow label="AI Tool Adoption" value={aiVal} onSelect={(n) => handleAiRating(eng.slot, n)} />
                     </div>
                   )}
 
-                  {/* Conditional comment field — appears after both ratings */}
                   {done && (
                     <div className="fade-in" style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid #f0efec' }}>
-                      {csatVal <= 7 ? (
+                      {needsComment ? (
                         <>
                           <div style={{ padding: '0.6rem 0.8rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '0.82rem', color: '#991b1b', marginBottom: '0.6rem', lineHeight: 1.5 }}>
-                            We're sorry to hear that. You gave us a low rating, and we'd really appreciate your feedback. What can we do to improve and make your experience better?
+                            We're sorry to hear that. You gave a low rating, and we'd really appreciate your feedback. What can we do to improve and make your experience better?
                           </div>
                           <textarea
                             className="input"
                             rows={3}
-                            placeholder="Please share your feedback so we can improve..."
+                            placeholder="Please share your feedback so we can improve... (required)"
                             value={commentVal}
                             onChange={e => handleComment(eng.slot, e.target.value)}
-                            style={{ resize: 'vertical', fontFamily: 'inherit' }}
+                            style={{ resize: 'vertical', fontFamily: 'inherit', borderColor: commentMissing ? '#fca5a5' : undefined }}
                           />
+                          {commentMissing && (
+                            <div style={{ fontSize: '0.75rem', color: '#dc2626', marginTop: '0.3rem' }}>
+                              Feedback is required for low scores
+                            </div>
+                          )}
                         </>
                       ) : (
                         <>
@@ -347,12 +389,17 @@ export default function App() {
               )
             })}
 
-            {/* Respondent fields + submit */}
             {allRated && (
               <div className="fade-in" style={{ marginTop: '1.5rem' }}>
-                <div style={{ padding: '1rem', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.85rem', color: '#166534' }}>
-                  All {engineers.length} engineer{engineers.length > 1 ? 's' : ''} rated. Please add your details and submit.
-                </div>
+                {lowScoreMissingComments.length > 0 ? (
+                  <div style={{ padding: '1rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.85rem', color: '#991b1b' }}>
+                    Please provide feedback for {lowScoreMissingComments.map(e => e.name).join(', ')} before submitting (low score requires comments).
+                  </div>
+                ) : (
+                  <div style={{ padding: '1rem', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.85rem', color: '#166534' }}>
+                    All {engineers.length} engineer{engineers.length > 1 ? 's' : ''} rated. Please add your details and submit.
+                  </div>
+                )}
 
                 <div className="field">
                   <label className="label">Your Name *</label>
@@ -366,7 +413,7 @@ export default function App() {
                 <div className="submit-row" style={{ marginTop: '1rem' }}>
                   <button
                     className="btn btn-primary"
-                    disabled={!respondentName || submitting}
+                    disabled={!canSubmit || submitting}
                     onClick={submitFeedback}
                   >
                     {submitting ? <><span className="loader loader-white" /> Submitting...</> : 'Submit Feedback'}
@@ -377,17 +424,16 @@ export default function App() {
           </div>
         )}
 
-        {/* SUCCESS */}
         {screen === 'submitted' && (
           <div className="success fade-in">
             <div className="check-circle">✓</div>
             <h2 className="success-title">Thank you, {respondentName}</h2>
             <p className="success-text">
-              Your feedback for {engineers.length} Smart Worker{engineers.length > 1 ? 's' : ''} at {contact?.company} has been recorded.
+              Your feedback for {engineers.length} Smart Worker{engineers.length > 1 ? 's' : ''} at {contact?.company} for {period} has been recorded successfully.
             </p>
 
             <div className="summary-card">
-              <div className="summary-header">Summary</div>
+              <div className="summary-header">Summary — {period}</div>
               {engineers.map(eng => (
                 <div key={eng.slot} style={{ padding: '0.6rem 0', borderBottom: '1px solid #f0efec' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -414,6 +460,10 @@ export default function App() {
                 </span>
               </div>
             </div>
+
+            <p style={{ color: '#aaa', fontSize: '0.78rem', marginTop: '1.5rem' }}>
+              If you need to make changes to your submission, please contact your CS team.
+            </p>
           </div>
         )}
 
