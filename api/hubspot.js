@@ -56,35 +56,51 @@ module.exports = async function handler(req, res) {
     }
 
     if (action === 'get_contact') {
-      const props = ['firstname', 'lastname', 'email', 'jobtitle', 'company'];
-      for (let i = 1; i <= MAX_ENGINEERS; i++) {
-        props.push('engineer_' + i);
-        props.push('engineer_' + i + '_csat');
-        props.push('engineer_' + i + '_ai_score');
+      var basicProps = ['firstname', 'lastname', 'email', 'jobtitle', 'company'];
+      for (var i = 1; i <= MAX_ENGINEERS; i++) {
+        basicProps.push('engineer_' + i);
       }
 
-      const contact = await hubspotRequest('GET', '/crm/v3/objects/contacts/' + contactId + '?properties=' + props.join(','));
+      var contact;
+      try {
+        contact = await hubspotRequest('GET', '/crm/v3/objects/contacts/' + contactId + '?properties=' + basicProps.join(','));
+      } catch (e) {
+        return res.status(500).json({ error: 'Failed to load contact: ' + e.message });
+      }
 
-      const engineers = [];
-      for (let i = 1; i <= MAX_ENGINEERS; i++) {
-        const name = contact.properties?.['engineer_' + i];
+      var scoreProps = {};
+      try {
+        var scoreFields = [];
+        for (var j = 1; j <= MAX_ENGINEERS; j++) {
+          scoreFields.push('engineer_' + j + '_csat');
+          scoreFields.push('engineer_' + j + '_ai_score');
+        }
+        var scoreContact = await hubspotRequest('GET', '/crm/v3/objects/contacts/' + contactId + '?properties=' + scoreFields.join(','));
+        scoreProps = scoreContact.properties || {};
+      } catch (e) {
+        // Score properties may not all exist yet, that's OK
+      }
+
+      var engineers = [];
+      for (var k = 1; k <= MAX_ENGINEERS; k++) {
+        var name = contact.properties?.['engineer_' + k];
         if (name && name.trim()) {
           engineers.push({
-            slot: i,
+            slot: k,
             name: name.trim(),
-            csat: contact.properties?.['engineer_' + i + '_csat'] || null,
-            ai_score: contact.properties?.['engineer_' + i + '_ai_score'] || null
+            csat: scoreProps['engineer_' + k + '_csat'] || null,
+            ai_score: scoreProps['engineer_' + k + '_ai_score'] || null
           });
         }
       }
 
-      let companyName = contact.properties?.company || '';
+      var companyNameResult = contact.properties?.company || '';
       try {
-        const assocData = await hubspotRequest('GET', '/crm/v3/objects/contacts/' + contactId + '/associations/companies');
-        const companyIds = (assocData.results || []).map(r => r.toObjectId || r.id);
+        var assocData = await hubspotRequest('GET', '/crm/v3/objects/contacts/' + contactId + '/associations/companies');
+        var companyIds = (assocData.results || []).map(function(r) { return r.toObjectId || r.id; });
         if (companyIds.length > 0) {
-          const comp = await hubspotRequest('GET', '/crm/v3/objects/companies/' + companyIds[0] + '?properties=name');
-          companyName = comp.properties?.name || companyName;
+          var comp = await hubspotRequest('GET', '/crm/v3/objects/companies/' + companyIds[0] + '?properties=name');
+          companyNameResult = comp.properties?.name || companyNameResult;
         }
       } catch (e) {}
 
@@ -94,23 +110,23 @@ module.exports = async function handler(req, res) {
           firstname: contact.properties?.firstname || '',
           lastname: contact.properties?.lastname || '',
           email: contact.properties?.email || '',
-          company: companyName
+          company: companyNameResult
         },
         engineers: engineers
       });
     }
 
     if (action === 'submit_feedback') {
-      const results = { scoresUpdated: false, noteCreated: false, errors: [] };
+      var results = { scoresUpdated: false, noteCreated: false, errors: [] };
 
       if (scores && scores.length > 0) {
-        const properties = {};
-        for (const s of scores) {
-          properties['engineer_' + s.slot + '_csat'] = String(s.csat);
-          properties['engineer_' + s.slot + '_ai_score'] = String(s.ai_score);
+        var properties = {};
+        for (var s = 0; s < scores.length; s++) {
+          properties['engineer_' + scores[s].slot + '_csat'] = String(scores[s].csat);
+          properties['engineer_' + scores[s].slot + '_ai_score'] = String(scores[s].ai_score);
         }
         try {
-          await hubspotRequest('PATCH', '/crm/v3/objects/contacts/' + contactId, { properties });
+          await hubspotRequest('PATCH', '/crm/v3/objects/contacts/' + contactId, { properties: properties });
           results.scoresUpdated = true;
         } catch (e) { results.errors.push('Scores: ' + e.message); }
       }
@@ -119,3 +135,23 @@ module.exports = async function handler(req, res) {
         await hubspotRequest('POST', '/crm/v3/objects/notes', {
           properties: { hs_note_body: noteBody, hs_timestamp: new Date().toISOString() },
           associations: [{
+            to: { id: Number(contactId) },
+            types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 202 }]
+          }]
+        });
+        results.noteCreated = true;
+      } catch (e) {
+        try {
+          await hubspotRequest('POST', '/crm/v3/objects/notes', {
+            properties: { hs_note_body: noteBody + '\n[Contact ID: ' + contactId + ']', hs_timestamp: new Date().toISOString() }
+          });
+          results.noteCreated = true;
+        } catch (e2) { results.errors.push('Note: ' + e2.message); }
+      }
+
+      return res.status(200).json({ success: results.scoresUpdated || results.noteCreated, ...results });
+    }
+
+    return res.status(400).json({ error: 'Unknown action' });
+  } catch (err) { return res.status(500).json({ error: err.message }); }
+};
